@@ -1,0 +1,12 @@
+---
+title: "Marker analysis"
+format: html
+---
+
+::: columns
+[![4d CT and 6d CT](radiotherapyv3cover.jpg){fig-align="left"}](6d ct and 4d ct.html)
+
+[![6d CT and 6d Novalis](radiotherapyv3cover.jpg){fig-align="left"}](6d ct vs 6d novalis.html)
+
+[![4d TB Reference and 4d TB Treatment](radiotherapyv3cover.jpg){fig-align="left"}](4d TB reference vs 4d TB treatment.html)
+:::

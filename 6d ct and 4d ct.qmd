@@ -1,0 +1,186 @@
+---
+title: "Marker analysis of 6d CT and 4d CT"
+format: 
+  html:
+    toc: true
+    toc-location: right
+    smooth-scroll: true
+    code-fold: true
+    code-summary: "Show the code"
+execute:
+  cache: false
+  warning: FALSE
+  message: FALSE
+---
+
+
+```{r}
+library(readxl)
+library(janitor)
+library(tidyverse)
+```
+
+In the context of radiotherapy CT (Computed Tomography) images, the terms "4 dot marker" and "6 dot marker" likely refer to fiducial markers or reference points that are placed on or near the patient's body during the imaging process.
+These markers help in aligning and positioning the patient accurately for radiotherapy treatment planning.
+
+**4 Dot Marker:**
+
+A 4-dot marker typically consists of four small radiopaque dots arranged in a specific pattern.
+These markers are often placed on the patient's skin or attached to immobilization devices during CT scans.
+The arrangement of the dots forms a known geometric pattern, helping in the precise localization of the region of interest.
+
+**6 Dot Marker:**
+
+Similar to the 4-dot marker, a 6-dot marker includes six radiopaque dots arranged in a specific configuration.
+These markers aid in the accurate mapping of the patient's position during imaging and treatment planning.
+The geometric arrangement of the dots allows for better spatial referencing.
+Both types of markers serve as reference points for the medical team when planning and delivering radiotherapy.
+They help ensure that the treatment is targeted precisely at the intended area while minimizing radiation exposure to surrounding healthy tissues.
+
+It's worth noting that the specific design and usage of these markers may vary between different healthcare institutions and treatment protocols.
+The markers are an integral part of the quality assurance process in radiotherapy to enhance treatment accuracy and reproducibility.
+
+Our data is collected at intervals of 0.5 seconds, ranging from 2.0 seconds to 5.0 seconds.
+The data collection is performed based on the sample points and marker values.
+
+```{r data}
+
+final_6d_ct <- read_excel("6d vs 4d CT recorded timer_SM_for stats_final.xlsx", 
+                          sheet = "FINAL_6d_CT IMAGING")
+
+final_4d_ct <- read_excel("6d vs 4d CT recorded timer_SM_for stats_final.xlsx", 
+                          sheet = "FINAL_4d_CT IMAGING")
+
+```
+
+```{r}
+final_4d_ct |> clean_names() |> 
+  rename(sample_position = sample_positions) |> 
+  pivot_longer(
+    names_to = "time", values_to = "marker value", x5_0_sec:x2_0_sec) |> 
+  drop_na() |> mutate(time = str_replace_all(time, "x", ""),
+                      type = "4dot marker ct") -> df1
+```
+
+#### Data overview
+
+```{r}
+df1 |> ggplot(aes(sample_position, `marker value`, col=time)) +
+  geom_boxplot(outlier.shape = NA) + 
+  labs(title = "4 dot Marker ct data overview")
+```
+
+#### Distribution
+
+```{r}
+df1 |> ggplot(aes(sample_position, `marker value`, col = time)) +
+  geom_line() +
+  labs(title = "Distribution of 4 dot Marker ct based on time point")
+```
+
+In every time point marker values follows the polynomial distribution for more clarity plot separately.
+
+```{r}
+df1 |> ggplot(aes(sample_position, `marker value`, col = type)) +
+  geom_line() + facet_wrap(~time)
+```
+
+### 6 dot marker
+```{r}
+final_6d_ct |> clean_names() |> 
+  select(sample_position, x2_0_sec:x5_0_sec) |> 
+  pivot_longer(
+    names_to = "time", values_to = "marker value", x2_0_sec:x5_0_sec) |> 
+  drop_na() |> mutate(time = str_replace_all(time, "x", ""),
+                      type = "6dot marker ct") -> df2
+```
+
+
+#### Data overview
+
+```{r}
+df2 |> ggplot(aes(sample_position, `marker value`, col=time)) +
+  geom_boxplot(outlier.shape = NA) + 
+  labs(title = "6 dot Marker ct data overview")
+```
+
+#### Distribution
+
+```{r}
+df2 |> ggplot(aes(sample_position, `marker value`, col = time)) +
+  geom_line() +
+  labs(title = "Distribution of 6 dot Marker ct based on time point")
+```
+
+In every time point marker values follows the polynomial distribution for more clarity plot separately.
+
+```{r}
+df2 |> ggplot(aes(sample_position, `marker value`, col = type)) +
+  geom_line() + facet_wrap(~time)
+```
+
+
+#### Combine both
+
+```{r}
+newdf <- rbind(df1, df2)
+newdf |>  
+  ggplot(aes(sample_position, `marker value`, col = type)) +
+  geom_line() + facet_wrap(~time)
+```
+
+#### Polynomial regression
+
+```{r}
+results_df <- data.frame()
+coefficients_df <- data.frame()
+
+# Loop through all unique combinations of 'time' and 'type'
+for (time_val in unique(newdf$time)) {
+  for (type_val in unique(newdf$type)) {
+    # Subset the data for the current combination
+    subset_data <- subset(newdf, time == time_val & type == type_val)
+    
+    # Perform polynomial regression
+    model <- lm(`marker value` ~ poly(sample_position, degree = 4), data = subset_data)
+    
+    coef_names <- c("Intercept", "x1", "x2", "x3", "x4")
+    coefficients_subset <- data.frame(
+      type = type_val,
+      time = time_val,
+      coefficients = setNames(as.list(round(coef(model),3)), coef_names)  #, coef_names
+    )
+    coefficients_df <- bind_rows(coefficients_df, coefficients_subset)
+    
+    # Predict values
+    predicted_values <- predict(model, newdata = subset_data)
+    
+    # Create a data frame with results
+    result_subset <- data.frame(
+      time = time_val,
+      type = type_val,
+      sample_position = subset_data$sample_position,
+      marker_value = subset_data$`marker value`,
+      predicted = predicted_values
+    )
+    
+    # Append the results to the main data frame
+    results_df <- bind_rows(results_df, result_subset)
+  }
+}
+
+colnames(coefficients_df) <- c("type", "time", "Intercept", "x1", "x2", "x3", "x4")
+coefficients_df
+```
+
+#### Graphical representation
+```{r}
+ggplot(results_df, aes(y = marker_value, x = sample_position)) +
+  geom_line(col = "black") +
+  geom_line(aes(y = predicted), linetype = "dashed", col = "red") +
+  facet_grid(type ~ time, scales = "free_y")  +
+  labs(title = "Polynomial Regression", x = "Marker Value", y = "Sample Position")
+```
+
+If all the coefficient sign of two model same then we conclude direction of this two model are same. 
+only 2.0 sec 4 dot maker and 6 dot marker coefficient magnitude not same rest of that are same so this two marker time point marker values magnitude are same.

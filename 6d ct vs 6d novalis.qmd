@@ -1,0 +1,161 @@
+---
+title: "Marker analysis of 6d CT and 6d Novalis"
+format: 
+  html:
+    toc: true
+    toc-location: right
+    smooth-scroll: true
+    code-fold: true
+    code-summary: "Show the code"
+execute:
+  cache: false
+  warning: FALSE
+  message: FALSE
+---
+
+
+```{r}
+library(readxl)
+library(janitor)
+library(tidyverse)
+```
+
+
+```{r data}
+
+final_6d_ct <- read_excel("6d CT vs 6d NOVALIS _Final_1002024.xlsx", 
+    sheet = "FINAL_6d_CT Tracking")
+
+final_6d_novalis <- read_excel("6d CT vs 6d NOVALIS _Final_1002024.xlsx", 
+    sheet = "FINAL_6d_NV_TRACKING_TRT")
+```
+
+```{r}
+final_6d_ct |> clean_names() |> select(sample_position, x2_0_sec:x5_0_sec) |> 
+  pivot_longer(
+    names_to = "time", values_to = "marker value", x2_0_sec:x5_0_sec) |> 
+  drop_na() |> mutate(time = str_replace_all(time, "x", ""),
+                      type = "6dot marker ct") -> df1
+```
+
+#### 6 dot marker ct Data overview
+
+```{r}
+df1 |> ggplot(aes(sample_position, `marker value`, col=time)) +
+  geom_boxplot(outlier.shape = NA) + 
+  labs(title = "6 dot Marker ct data overview")
+```
+
+#### Distribution
+
+```{r}
+df1 |> ggplot(aes(sample_position, `marker value`, col = time)) +
+  geom_line() +
+  labs(title = "Distribution of 6 dot Marker ct based on time point")
+```
+
+In every time point marker values follows the polynomial distribution for more clarity plot separately.
+
+```{r}
+df1 |> ggplot(aes(sample_position, `marker value`, col = type)) +
+  geom_line() + facet_wrap(~time)
+```
+
+### 6 dot marker novalis
+```{r}
+final_6d_novalis |> clean_names() |> 
+  select(sample_position, x2_0_sec:x5_0_sec) |> 
+  pivot_longer(
+    names_to = "time", values_to = "marker value", x2_0_sec:x5_0_sec) |> 
+  drop_na() |> mutate(time = str_replace_all(time, "x", ""),
+                      type = "6dot marker novalis") -> df2
+```
+
+
+#### Data overview
+
+```{r}
+df2 |> ggplot(aes(sample_position, `marker value`, col=time)) +
+  geom_boxplot(outlier.shape = NA) + 
+  labs(title = "6 dot Marker novalis data overview")
+```
+
+#### Distribution
+
+```{r}
+df2 |> ggplot(aes(sample_position, `marker value`, col = time)) +
+  geom_line() +
+  labs(title = "Distribution of 6 dot Marker novalis based on time point")
+```
+
+In every time point marker values follows the polynomial distribution for more clarity plot separately.
+
+```{r}
+df2 |> ggplot(aes(sample_position, `marker value`, col = type)) +
+  geom_line() + facet_wrap(~time)
+```
+
+
+#### Combine both
+
+```{r}
+newdf <- rbind(df1, df2)
+newdf |>  
+  ggplot(aes(sample_position, `marker value`, col = type)) +
+  geom_line() + facet_wrap(~time)
+```
+
+#### Polynomial regression
+
+```{r}
+results_df <- data.frame()
+coefficients_df <- data.frame()
+
+# Loop through all unique combinations of 'time' and 'type'
+for (time_val in unique(newdf$time)) {
+  for (type_val in unique(newdf$type)) {
+    # Subset the data for the current combination
+    subset_data <- subset(newdf, time == time_val & type == type_val)
+    
+    # Perform polynomial regression
+    model <- lm(`marker value` ~ poly(sample_position, degree = 4), data = subset_data)
+    
+    coef_names <- c("Intercept", "x1", "x2", "x3", "x4")
+    coefficients_subset <- data.frame(
+      type = type_val,
+      time = time_val,
+      coefficients = setNames(as.list(round(coef(model),3)), coef_names)  #, coef_names
+    )
+    coefficients_df <- bind_rows(coefficients_df, coefficients_subset)
+    
+    # Predict values
+    predicted_values <- predict(model, newdata = subset_data)
+    
+    # Create a data frame with results
+    result_subset <- data.frame(
+      time = time_val,
+      type = type_val,
+      sample_position = subset_data$sample_position,
+      marker_value = subset_data$`marker value`,
+      predicted = predicted_values
+    )
+    
+    # Append the results to the main data frame
+    results_df <- bind_rows(results_df, result_subset)
+  }
+}
+
+colnames(coefficients_df) <- c("type", "time", "Intercept", "x1", "x2", "x3", "x4")
+coefficients_df
+```
+
+#### Graphical representation
+```{r}
+ggplot(results_df, aes(y = marker_value, x = sample_position)) +
+  geom_line(col = "black") +
+  geom_line(aes(y = predicted), linetype = "dashed", col = "red") +
+  facet_grid(type ~ time, scales = "free_y")  +
+  labs(title = "Polynomial Regression", x = "Marker Value", y = "Sample Position")
+```
+
+If all the coefficient sign of two model same then we conclude direction of this two model are same. 
